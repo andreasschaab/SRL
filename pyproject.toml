@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "srl"
+version = "0.1.0"
+description = "Structural Reinforcement Learning for heterogeneous-agent macroeconomic models"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "Chiyuan Wang" },
+    { name = "Yucheng Yang" },
+    { name = "Andreas Schaab" },
+    { name = "Benjamin Moll" },
+]
+dependencies = [
+    # JAX is pinned so results reproduce exactly across machines and match the
+    # GPU image the tutorials are validated on.
+    "jax==0.10.0",
+    "optax>=0.2.0",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "tqdm>=4.65",
+    "matplotlib>=3.7",
+]
+
+# Dev tooling (`pip install -e ".[dev]"`): the test runner and jupytext, which
+# regenerates the tutorial notebooks from their .py sources. Opt-in — a plain
+# `pip install srl` never pulls it.
+[project.optional-dependencies]
+dev = ["pytest>=7", "jupytext==1.19.3"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["srl*"]
