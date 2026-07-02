@@ -11,8 +11,30 @@
 # ---
 
 # %% [markdown]
+# [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andreasschaab/SRL/blob/main/tutorials/02_household_policy_gradient.ipynb)
+# 
+# **Running on Colab?** Just run the setup cell below. It clones the repo and installs the package. For a free GPU: Runtime → Change runtime type → GPU.
+
+# %%
+# --- Colab setup (auto-injected by build_notebooks.py; do not edit the .ipynb) ---
+import os, sys, subprocess
+
+if "google.colab" in sys.modules and os.path.basename(os.getcwd()) != "tutorials":
+    # Clone the repo (this also brings calibration.py and the data/ reference
+    # files the notebooks load) and install the package.
+    if not os.path.isdir("SRL"):
+        url = "https://github.com/andreasschaab/SRL.git"
+        subprocess.run(["git", "clone", "--depth=1", url, "SRL"], check=True)
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", "SRL"], check=True)
+    os.chdir("SRL/tutorials")
+    sys.path.insert(0, os.getcwd())
+
+# %% [markdown]
+# **If you are running this notebook locally and have not finished installing `srl` to your Python environment yet,** please check the instructions in `tutorials/01_household_jax.ipynb`.
+
+# %% [markdown]
 # # 2. The same problem, by the Structural Policy Gradient
-#
+# 
 # This is the notebook that matters most. We solve the **same** fixed-price
 # household problem a third time, but not by iterating a Bellman operator.
 # Instead we **maximize lifetime utility directly**: parameterize the consumption
@@ -20,13 +42,13 @@
 # **climb it with gradients**. This is the **Structural Policy Gradient (SPG)**,
 # the algorithm at the core of Structural Reinforcement Learning (SRL), the method
 # this package implements (Yang, Wang, Schaab & Moll, 2026).
-#
+# 
 # Notebook 1 changed the *tooling* (NumPy → JAX) and held the method fixed; this
 # notebook does the opposite: **same tooling, new method** (VFI → SPG). As
 # before, it checks the result against notebook 0's answer.
-#
+# 
 # Two ideas from the paper carry the notebook:
-#
+# 
 # - **Reinforcement learning's core idea:** a value function is an *expectation*,
 #   and an expectation can be *estimated by simulation*, with no Bellman equation
 #   needed (paper §3.1).
@@ -35,7 +57,7 @@
 #   we encode in a transition matrix and differentiate through *exactly*. Only the
 #   parts we *don't* know (in general equilibrium, the price process) are left to
 #   simulation. That hybrid is the "S" in SRL.
-#
+# 
 # **Honest up front:** on *this* problem SPG is overkill; VFI already nails it,
 # faster. We use it here because we can check it against a known answer.
 # Its payoff is notebook 5, where prices carry aggregate risk and the methods you
@@ -43,12 +65,12 @@
 
 # %% [markdown]
 # ## What you should already know
-#
+# 
 # - **Notebook 0**: the household problem and its VFI solution (our reference).
 # - **Notebook 1**: JAX, and especially `grad`: that a transformation turns a
 #   function into its derivative function. The policy gradient is `grad` aimed at
 #   lifetime utility.
-#
+# 
 # **No reinforcement-learning background is assumed.**
 
 # %%
@@ -81,16 +103,16 @@ print(f"n_b={n_b}, n_y={n_y};  sigma={sigma}, beta={beta}, q={q}")
 
 # %% [markdown]
 # ## Notation, and the plan
-#
+# 
 # We adopt the paper's notation. The individual state is $s=(b,y)$, wealth and
 # income, on a grid $s\in\{s_1,\dots,s_J\}$ with $J=n_b\,n_y$ points. The
 # consumption policy $\pi$ maps each state to a choice; on the grid it is a
 # $J$-vector $\boldsymbol\pi$ with parameters $\boldsymbol\theta$. The price is
 # $p=q$ (fixed here; it starts moving in notebook 3) and there is no aggregate
 # shock $z$ yet.
-#
+# 
 # Three bridges take us from VFI to SPG, each from something you did in nb 0:
-#
+# 
 # 1. **A value is a simulated expectation:** estimate lifetime utility by
 #    simulating, not by solving a Bellman equation.
 # 2. **Structural knowledge makes it exactly differentiable:** the *known*
@@ -99,12 +121,12 @@ print(f"n_b={n_b}, n_y={n_y};  sigma={sigma}, beta={beta}, q={q}")
 #    $\boldsymbol\theta$ and `grad` differentiates through it exactly.
 # 3. **Climb it:** gradient ascent, $\boldsymbol\theta \leftarrow
 #    \boldsymbol\theta + \eta\,\nabla_{\boldsymbol\theta}\mathcal{L}$.
-#
+# 
 # We take them in order.
 
 # %% [markdown]
 # ## Bridge 1: a value is a simulated expectation
-#
+# 
 # This is the one idea at the heart of all reinforcement learning. In notebook 0,
 # $V(s)$ was the fixed point of the Bellman operator. But by definition it is also
 # just an expectation,
@@ -180,11 +202,11 @@ plt.show()
 
 # %% [markdown]
 # ## Bridge 2: structural knowledge makes the value *exactly* differentiable
-#
+# 
 # Evaluating a policy is not enough; to *improve* it we need the gradient of the
 # value with respect to the policy parameters $\boldsymbol\theta$. This is where
 # SRL departs from textbook RL, by exploiting structure.
-#
+# 
 # **Partition the dynamics into what we know and what we don't.** A household's
 # own dynamics are *known*: given a consumption policy, the budget constraint
 # $b' = (b + y - c)/q$ and the income process $\Pi$ pin down exactly where it
@@ -194,7 +216,7 @@ plt.show()
 # histogram-transition operator* (Young, 2010) you used to move the distribution
 # forward in notebook 0. Because we *built* $\mathbf{A}_\pi$ from the model, we can
 # **differentiate through it exactly**.
-#
+# 
 # With the individual dynamics carried by $\mathbf{A}_\pi$, the value becomes a
 # clean vector expression. Writing $\mathbf{u}_t = u(\mathbf{c}_t)$ for the vector
 # of flow utilities and $\mathbf{A}_{\pi,0\to t}=\mathbf{A}_{\pi,0}\cdots
@@ -208,7 +230,7 @@ plt.show()
 # nothing left to sample: the value reduces to $\mathbf{v}_\pi=\sum_t\beta^t
 # \mathbf{A}_\pi^t\mathbf{u}=(\mathbf{I}-\beta\mathbf{A}_\pi)^{-1}\mathbf{u}$,
 # computed **exactly**, and so is its gradient.
-#
+# 
 # **One normalization, used in every `step` below.** The flow utility is
 # multiplied by $(1-\beta)$. The reason: the discount weights $\beta^t$ sum to
 # $1/(1-\beta)$, so $(\mathbf{I}-\beta\mathbf{A}_\pi)^{-1}$ has row sums
@@ -218,14 +240,14 @@ plt.show()
 # $O(1)$ for any discount factor, which keeps the objective and its gradient
 # well-scaled. It multiplies the objective by a positive constant, so the optimal
 # policy is unchanged.
-#
+# 
 # > **Contrast with textbook RL.** REINFORCE and friends treat the environment as
 # > a black box they cannot differentiate, so they estimate the policy gradient
 # > from noisy sampled actions (high variance). SRL knows the individual dynamics
 # > and differentiates $\mathbf{A}_\pi$ directly: an *exact* gradient, no
 # > sampling noise. The presence of $\mathbf{A}_\pi$ in the objective is precisely
 # > what "Structural" refers to.
-#
+# 
 # The `SPGSolver`'s objective is this value, written so JAX can differentiate it.
 # Read the `step` below: it pulls the transition $\mathbf{A}$ and utilities
 # $\mathbf{U}$ from the model, accumulates discounted utility weighted by a
@@ -242,7 +264,7 @@ print(inspect.getsource(SPGSolver._neg_simulated_utility))
 
 # %% [markdown]
 # ## Bridge 3: climb it
-#
+# 
 # To optimize we need a *scalar* objective, not the whole value vector. The paper
 # averages the value over a uniform distribution $\mathbf{d}_0$ of starting states,
 # $$\mathcal{L}(\boldsymbol\theta)=\mathbf{d}_0^{\rm T}\,\hat{\mathbf{v}}_\pi
@@ -263,11 +285,11 @@ print(inspect.getsource(SPGSolver._gradient_step))
 
 # %% [markdown]
 # ## Putting it together: the model as an environment
-#
+# 
 # To use the solver we describe the model through two functions, the same
 # `(state_space, action_space, AUS_func, reset_func)` interface you met in
 # notebook 1's `VFISolver`, now driving the policy gradient:
-#
+# 
 # - **`AUS_func`** returns, for the current policy, the transition triplets
 #   **A** (the sparse $\mathbf{A}_\pi$, in Young's histogram form), the utility
 #   vector **U** ($\mathbf{u}_t$), and the next exogenous state. This *is* the
@@ -275,7 +297,7 @@ print(inspect.getsource(SPGSolver._gradient_step))
 # - **`reset_func`** draws an initial exogenous state; here there is none (the
 #   price is a fixed scalar and there is no aggregate shock), so it returns
 #   `None`.
-#
+# 
 # The action is the consumption share `cshare`$(b,y)$. Everything below is the
 # household model you already know, expressed as code the solver can simulate and
 # differentiate.
@@ -321,7 +343,7 @@ gamma = beta                                          # the solver's discount ar
 # sharpen the policy, especially in rarely-visited states. This is solved on GPU.
 
 # %%
-solver = SPGSolver(sample_size=512, epoch=1000, warm_up=50, early_stop=False,
+solver = SPGSolver(sample_size=512, epoch=1000, warm_up=0, early_stop=False,
                    seed=0, verbose=False)
 spg_policy, logs = solver.solve(gamma, state_space, action_space, AUS_func, reset_func)
 print(f"SPG: {len(logs)} epochs, {solver.total_time:.1f}s")
@@ -332,7 +354,7 @@ c_spg = np.clip(np.asarray(wealth) * np.asarray(spg_policy["cshare"]), eps,
 
 # %% [markdown]
 # ### Watch the objective climb, and the policy with it
-#
+# 
 # Gradient ascent raises expected lifetime utility each step (left). The policy
 # starts at a flat guess (consume half of cash-on-hand everywhere, the straight
 # line $c = 0.5\,(b+y)$) and bends toward notebook 0's VFI policy as it climbs
@@ -356,8 +378,8 @@ axL.grid(alpha=0.3)
 axR.plot(b_np[mask], init_c[mask, j], color="0.6", lw=2, ls=":", label="initial guess: share 0.5")
 axR.plot(b_np[mask], c_policy_np[mask, j], lw=5, alpha=0.3, color="C0", label="nb-0 VFI")
 axR.plot(b_np[mask], c_spg[mask, j], lw=2, ls="--", color="C0", label="SPG (final)")
-axR.set_xlabel("wealth $b$")
-axR.set_ylabel("consumption $c$  (middle income)")
+axR.set_xlabel("Wealth $b$")
+axR.set_ylabel("Consumption $c$  (middle income)")
 axR.set_title("The policy bends from flat guess to the VFI answer")
 axR.legend()
 axR.grid(alpha=0.3)
@@ -366,7 +388,7 @@ plt.show()
 
 # %% [markdown]
 # ## The check: does the policy gradient land on notebook 0's answer?
-#
+# 
 # The whole point: a completely different method must recover the same
 # consumption policy. We overlay the SPG policy (dashed) on the notebook-0 VFI
 # baseline (solid) for all three income states.
@@ -383,8 +405,8 @@ for jj in range(n_y):
                     label=f"VFI: $y={float(e_grid[jj]):.2f}$")
     ax.plot(b_np[mask], c_spg[mask, jj], lw=2, ls="--", color=line.get_color(),
             label=f"SPG: $y={float(e_grid[jj]):.2f}$")
-ax.set_xlabel("wealth $b$")
-ax.set_ylabel("consumption $c$")
+ax.set_xlabel("Wealth $b$")
+ax.set_ylabel("Consumption $c$")
 ax.set_title("Policy gradient vs. VFI baseline")
 ax.legend(fontsize=8)
 ax.grid(alpha=0.3)
@@ -402,7 +424,7 @@ plt.show()
 
 # %% [markdown]
 # ## What's next
-#
+# 
 # We have now solved one fixed-price household problem three ways: VFI in NumPy
 # (nb 0), VFI in JAX (nb 1), and the structural policy gradient (nb 2). All
 # three agree. With the method established and trusted, **notebook 3** switches on
@@ -412,27 +434,29 @@ plt.show()
 
 # %% [markdown]
 # ## Exercises
-#
-# 1. **Convergence vs. gradient variance.** The estimate $\hat v$ is averaged
-#    over `sample_size` simulated paths; fewer paths means a noisier gradient.
-#    Re-train with `sample_size = 16` and `sample_size = 256` and compare the
-#    objective curves; fewer paths climb more erratically. A worked version is
+# 
+# 1. **Comparision of sample sizes.** The estimate $\hat v$ is averaged
+#    over `sample_size` simulated paths; fewer paths "usually" means a noisier gradient.
+#    Re-train with `sample_size = 1` and `sample_size = 256` and compare the
+#    objective curves.  A worked version is
 #    below.
 # 2. **Start from a bad policy.** Initialize the consumption share at $0.95$
 #    everywhere (a household that consumes almost everything) and confirm gradient
 #    ascent still converges to the same policy. Worked below.
 
 # %%
-# Exercise 1: sample size vs. gradient noise (short runs to keep it quick).
+# Exercise 1: comparision of sample sizes (short runs to keep it quick).
 fig, ax = plt.subplots(figsize=(7, 4.5))
-for ss in [16, 256]:
-    s = SPGSolver(sample_size=ss, epoch=200, warm_up=30, early_stop=False,
+colors = ["lightblue", "red"]
+linestyles = ["-", ":"]
+for ss in [1, 256]:
+    s = SPGSolver(sample_size=ss, epoch=200, warm_up=0, early_stop=False,
                   seed=0, verbose=False)
     _, lg = s.solve(gamma, state_space, action_space, AUS_func, reset_func)
-    ax.plot([d["cumulative_utility"] for d in lg], lw=2, label=f"sample_size = {ss}")
+    ax.plot([d["cumulative_utility"] for d in lg], lw=3, label=f"sample_size = {ss}",c=colors[ss==256], linestyle=linestyles[ss==256])
 ax.set_xlabel("epoch")
 ax.set_ylabel("estimated lifetime utility")
-ax.set_title("Exercise 1: more paths -> smoother ascent")
+ax.set_title("Exercise 1: sample_size = 1 works the same as sample_size = 256")
 ax.legend()
 ax.grid(alpha=0.3)
 plt.tight_layout()
@@ -441,12 +465,14 @@ plt.show()
 # %%
 # Exercise 2: converge from a deliberately bad initial policy (s = 0.95).
 bad_init = {"cshare": jnp.ones((n_b, n_y)) * 0.95}
-s = SPGSolver(sample_size=128, epoch=600, warm_up=50, early_stop=False,
-              seed=0, verbose=False)
+# here we stopped learning rate decay to ignore the wrong policy gradient accumulated at the initial stage
+# so that the SPG solver can converge to the correct policy from a bad starting point
+s = SPGSolver(sample_size=1, epoch=1000, warm_up=0, early_stop=False,
+              seed=0, verbose=False, lr_decay=1.0)
 bad_policy, _ = s.solve(gamma, state_space, action_space, AUS_func, reset_func,
                         policy=bad_init)
-c_bad = np.clip(np.asarray(wealth) * np.asarray(bad_policy["cshare"]), eps,
-                np.asarray(wealth) - eps)
+c_bad = np.clip(np.asarray(wealth) * np.asarray(bad_policy["cshare"]), eps, # type: ignore
+                np.asarray(wealth) - eps) # type: ignore
 print(f"from s=0.95 start:  max |c - c_VFI| over b<=20 = "
       f"{np.max(np.abs(c_bad[mask] - c_policy_np[mask])):.3e}")
 
@@ -456,10 +482,12 @@ for jj in range(n_y):
                     label=f"VFI: $y={float(e_grid[jj]):.2f}$")
     ax.plot(b_np[mask], c_bad[mask, jj], lw=2, ls="--", color=line.get_color(),
             label=f"SPG from share 0.95: $y={float(e_grid[jj]):.2f}$")
-ax.set_xlabel("wealth $b$")
-ax.set_ylabel("consumption $c$")
+ax.set_xlabel("Wealth $b$")
+ax.set_ylabel("Consumption $c$")
 ax.set_title("Exercise 2: same answer from a bad starting policy")
 ax.legend(fontsize=8)
 ax.grid(alpha=0.3)
 plt.tight_layout()
 plt.show()
+
+

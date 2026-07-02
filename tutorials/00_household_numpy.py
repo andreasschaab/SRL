@@ -12,35 +12,35 @@
 
 # %% [markdown]
 # # 0. The household problem, the way you already solve it
-#
+# 
 # This is the starting point of the SRL tutorials, and it contains nothing new,
 # on purpose. We solve a model you have almost certainly coded yourself, the
 # income-fluctuation (consumption–savings) problem, with a method you know cold:
 # value function iteration (VFI). Plain NumPy, no JAX, no `srl`.
-#
+# 
 # Why begin here? The rest of the course introduces two new things, JAX (the
 # tooling, notebook 1) and the policy gradient (the method, notebook 2), and the
 # only way to *trust* them is to check them against an answer you already
 # believe. This notebook produces that answer. Notebooks 1 and 2 solve the
 # *same* model a different way and must land on the *same* consumption policy.
-#
+# 
 # These first notebooks are **partial equilibrium**: the household takes the
 # interest rate as given. There's no market clearing yet, and we don't look at
 # the wealth distribution; that comes in notebook 4, where it's actually used.
 
 # %% [markdown]
 # ## What you should already know
-#
+# 
 # - The consumption–savings problem with idiosyncratic income risk and a
 #   borrowing constraint.
 # - Value function iteration: iterating the Bellman operator to a fixed point.
-#
+# 
 # No JAX, no reinforcement learning. If you have solved an Aiyagari household
 # block, you are over-qualified for this notebook.
 
 # %% [markdown]
 # ## The model
-#
+# 
 # A household chooses consumption $c$ and next-period bonds $b'$ to maximize
 # $$\mathbb{E}_0 \sum_{t=0}^\infty \beta^t\, u(c_t),
 #   \qquad u(c)=\frac{c^{1-\sigma}}{1-\sigma},$$
@@ -52,7 +52,7 @@
 # bond price $q$; the interest rate is just $r = 1/q - 1$. In these first
 # notebooks $q$ is **fixed** at a value just below its general-equilibrium level
 # (the market sets it in notebook 4).
-#
+# 
 # We parameterize the choice by the **consumption share** $s \in [0,1]$: consume
 # $c = s\,(b+y)$ and save the rest, $b' = (b + y - c)/q$. The Bellman equation is
 # $$V(b,y) = \max_{s\in[0,1]}\ u\!\big(s\,(b+y)\big)
@@ -61,7 +61,7 @@
 
 # %% [markdown]
 # ## Calibration
-#
+# 
 # One parameterization is shared across the whole tutorial sequence, so every
 # notebook describes the same economy. It lives in `calibration.py` (pure NumPy):
 # the income process is a 3-state **Rouwenhorst** discretization of a log-AR(1)
@@ -88,14 +88,13 @@ print("income states:", e_grid.round(3))
 
 # %% [markdown]
 # ## Value function iteration
-#
+# 
 # This is exactly the value-function iteration the library's `VFISolver` runs,
 # iterating the Bellman operator to a fixed point, just written out in plain
 # NumPy so every step is visible. (Notebook 1 confirms `VFISolver` lands on the
 # same answer.) The household may choose *any* $b'$, not only a grid point, so we
 # evaluate the continuation value $V(b',y')$ by linear interpolation on the
 # asset grid, searching over a fine grid of consumption shares $s\in[0,1]$.
-
 
 # %%
 def crra(c, sig):
@@ -138,7 +137,7 @@ V, c_policy = solve_vfi()
 
 # %% [markdown]
 # ## The consumption policy
-#
+# 
 # This is the object the rest of the course is measured against: consumption as a
 # function of wealth $b$, one line per income state. Higher income shifts
 # consumption up; at low wealth, low-income households are pushed against the
@@ -149,9 +148,9 @@ fig, ax = plt.subplots(figsize=(7, 5))
 mask = b_grid <= 20
 for j in range(n_y):
     ax.plot(b_grid[mask], c_policy[mask, j], lw=2.5, label=f"$y = {e_grid[j]:.2f}$")
-ax.set_xlabel("wealth $b$")
-ax.set_ylabel("consumption $c$")
-ax.set_title("Consumption policy (NumPy VFI)")
+ax.set_xlabel("Wealth $b$")
+ax.set_ylabel("Consumption $c$")
+ax.set_title("NumPy version of VFI")
 ax.legend()
 ax.grid(alpha=0.3)
 plt.tight_layout()
@@ -159,7 +158,7 @@ plt.show()
 
 # %% [markdown]
 # ## Save the reference solution
-#
+# 
 # Notebooks 1 and 2 solve this exact problem with JAX and with the policy
 # gradient, and check that they reproduce this policy. We save it so they can
 # overlay against it.
@@ -176,7 +175,7 @@ print("saved reference solution to", ref_path)
 
 # %% [markdown]
 # ## Exercises
-#
+# 
 # 1. **Risk aversion.** Re-solve with $\sigma = 1$ (log utility) and $\sigma = 5$.
 #    Higher $\sigma$ strengthens the precautionary-saving motive, so households
 #    consume less and save more at low wealth. A worked solution is below.
@@ -196,3 +195,5 @@ ax.legend()
 ax.grid(alpha=0.3)
 plt.tight_layout()
 plt.show()
+
+

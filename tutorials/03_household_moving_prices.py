@@ -1,28 +1,35 @@
-# ---
-# jupyter:
-#   jupytext:
-#     text_representation:
-#       extension: .py
-#       format_name: percent
-#   kernelspec:
-#     display_name: Python 3
-#     language: python
-#     name: python3
-# ---
+# %% [markdown]
+# [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andreasschaab/SRL/blob/main/tutorials/03_household_moving_prices.ipynb)
+# 
+# **Running on Colab?** Just run the setup cell below. It clones the repo and installs the package. For a free GPU: Runtime → Change runtime type → GPU.
+
+# %%
+# --- Colab setup (auto-injected by build_notebooks.py; do not edit the .ipynb) ---
+import os, sys, subprocess
+
+if "google.colab" in sys.modules and os.path.basename(os.getcwd()) != "tutorials":
+    # Clone the repo (this also brings calibration.py and the data/ reference
+    # files the notebooks load) and install the package.
+    if not os.path.isdir("SRL"):
+        url = "https://github.com/andreasschaab/SRL.git"
+        subprocess.run(["git", "clone", "--depth=1", url, "SRL"], check=True)
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", "SRL"], check=True)
+    os.chdir("SRL/tutorials")
+    sys.path.insert(0, os.getcwd())
 
 # %% [markdown]
 # # 3. The household with moving prices
-#
+# 
 # In notebooks 0–2 the bond price `q` was a fixed scalar. We solved that one
 # fixed-price household problem three ways (VFI in NumPy, VFI in JAX, and the
 # structural policy gradient), and all three agreed. This notebook switches on
 # **one new moving piece: the price moves.** The household now faces an *exogenous*
 # process for the bond price `q` and for aggregate productivity `z`, and must
 # choose consumption as a function of the macro state it happens to be in.
-#
+# 
 # This is a small change to the model and almost no change to the code, but it
 # is the conceptual hinge of the whole course, for two reasons.
-#
+# 
 # - **It is where the policy gradient's simulation finally does real work.** In
 #   notebook 2 the price was fixed and there was no aggregate shock, so the
 #   expectation defining lifetime utility was trivial: "nothing left to
@@ -40,7 +47,7 @@
 
 # %% [markdown]
 # ## What you should already know
-#
+# 
 # - **Notebook 2**: the Structural Policy Gradient: that lifetime utility is a
 #   simulated expectation, that the *known* individual dynamics enter through the
 #   transition matrix $\mathbf{A}_\pi$ and are differentiated exactly, and that
@@ -67,19 +74,19 @@ eps = 1e-9                                  # consumption floor
 
 # %% [markdown]
 # ## The model: one new moving piece
-#
+# 
 # The household problem is the one you already know, with the budget constraint
 # carrying two aggregates that now *move*:
 # $$c + q\,b' = b + z\,y, \qquad b' \ge 0,$$
 # so wealth is $b + z\,y$ and next assets are $b' = (b + z\,y - c)/q$. Two things
 # changed from notebook 2, where $q$ was fixed and $z\equiv 1$:
-#
+# 
 # - **$q$, the bond price, is now a state**, following an exogenous Markov
 #   process. A high $q$ is a low interest rate ($r = 1/q - 1$): saving earns
 #   little and bonds are expensive.
 # - **$z$, aggregate productivity, is now a state**, scaling everyone's income
 #   $z\,y$, also following an exogenous Markov process.
-#
+# 
 # The individual state grows from $(b, y)$ to $(b, y, q, z)$, and the policy
 # becomes $\text{cshare}(b, y, q, z)$: the consumption share now depends on the
 # aggregate conditions the household faces. Crucially, the cross-sectional
@@ -90,7 +97,7 @@ eps = 1e-9                                  # consumption floor
 
 # %% [markdown]
 # ### The household block: the spine calibration (notebooks 0–4)
-#
+# 
 # The household (risk aversion, discount factor, income process, asset grid) is
 # the *same economy* as notebooks 0–2, read from the shared `calibration.py`.
 # Only the new aggregate processes are added here.
@@ -104,10 +111,10 @@ n_y = e_grid.shape[0]
 
 # %% [markdown]
 # ### The aggregate processes: the new piece
-#
+# 
 # Now the new objects: discretized Markov chains for the two
 # aggregates. We keep them small and legible.
-#
+# 
 # - **Bond price `q`**: a persistent three-state chain centered on `Q_FIXED =
 #   0.995`, the very price held fixed in notebooks 0–2. The reader can see the
 #   whole process: three price levels and the $3\times3$ matrix of transition
@@ -137,7 +144,7 @@ print("z levels:", np.asarray(z_grid).round(3), " (mean 1)")
 
 # %% [markdown]
 # ## The structural partition, now with something to simulate
-#
+# 
 # Recall the value vector from notebook 2,
 # $$\mathbf{v}_\pi=\mathbb{E}\Big[\textstyle\sum_{t\ge 0}\gamma^t\,
 #   \mathbf{A}_{\pi,0\to t}\,\mathbf{u}_t\Big],$$
@@ -147,9 +154,9 @@ print("z levels:", np.asarray(z_grid).round(3), " (mean 1)")
 # $\mathbf{A}_\pi$ (the income chain $\Pi$ and the interpolated savings rule). In
 # notebook 2 those unknown trajectories were degenerate: $q$ fixed, no $z$, so
 # the expectation collapsed and there was nothing to sample.
-#
+# 
 # Here they are live. The policy gradient handles the split mechanically:
-#
+# 
 # - **What we don't know, the aggregate path, is *simulated*.** `reset_func`
 #   draws an initial $(q, z)$; each step `AUS_func` draws the next $(q, z)$ from
 #   the Markov transitions. Averaging over many such paths is the expectation
@@ -158,7 +165,7 @@ print("z levels:", np.asarray(z_grid).round(3), " (mean 1)")
 #   the simulated $(q, z)$ of the period, the budget constraint and income chain
 #   still assemble into $\mathbf{A}_\pi$ exactly, and `grad` flows through it
 #   without any sampling noise.
-#
+# 
 # That is the entire idea of Structural RL, and `AUS_func` below is where it
 # lives. Compare it line-for-line with notebook 2's: the body is identical except
 # that (i) it reads $q$ and $z$ from the current state, (ii) wealth is $b + z\,y$,
@@ -216,7 +223,7 @@ action_space = {"cshare": (0.0001, 1.0, 0.5)}         # (min, max, initial guess
 
 # %% [markdown]
 # ## Solve with the policy gradient
-#
+# 
 # Same solver as notebook 2, same call. We use modest, CPU-friendly settings; the
 # in-code comment gives the paper-scale values. One setting earns a comment: with
 # a higher discount factor the simulated paths must run longer before the
@@ -229,19 +236,19 @@ from srl import SPGSolver
 
 # Paper-scale: sample_size=128, epoch=400+, trunc_eps=0.001 (run on GPU/Colab),
 # which tightens the match below from ~1% to ~0.3% of consumption.
-spg = SPGSolver(sample_size=128, epoch=150, warm_up=0, trunc_eps=0.02,
-                early_stop=False, seed=0, verbose=False)
+spg = SPGSolver(sample_size=128, epoch=150, warm_up=0, trunc_eps=0.01,
+                early_stop=False, seed=0, verbose=False) # use trunc_eps=0.02 for CPU server to keep it quick
 spg_policy, logs = spg.solve(gamma, state_space, action_space, AUS_func, reset_func)
 print(f"SPG: {len(logs)} epochs, {spg.total_time:.1f}s on this machine")
 
 # %% [markdown]
 # ## The reference: value function iteration on the expanded state
-#
+# 
 # Notebook 2 checked the policy gradient against notebook 0's saved answer.
 # That answer was for the *fixed*-price problem, so it no longer applies once the
 # price moves. Instead we recompute the reference here, with `VFISolver` from
 # notebook 1, on the full $(b, y, q, z)$ state.
-#
+# 
 # Nothing about VFI is new; it is the same Bellman iteration as notebook 1, with
 # the continuation expectation now taken over the *joint* transition of income,
 # price, and TFP. We build that joint transition as the (independent) product of
@@ -252,7 +259,7 @@ print(f"SPG: {len(logs)} epochs, {spg.total_time:.1f}s on this machine")
 # %%
 from srl import VFISolver
 
-n_action = 512                                        # consumption-share grid for VFI
+n_action = 2048                                        # consumption-share grid for VFI. use 512 or lower for CPU server
 c_grid = jnp.linspace(0.0, 1.0, n_action)
 # Joint transition over (y, q, z): the three processes are independent.
 agg_trans = jnp.einsum("ij,kl,mn->ijklmn", Pi, q_trans, z_trans)
@@ -273,14 +280,14 @@ def transition_func(state_indices, a_idx, V):
     return nextEV, crra_util_func(c, sigma)
 
 
-vfi = VFISolver()
+vfi = VFISolver(eps=1e-8)
 V, vfi_policy, vfi_logs = vfi.solve(
     gamma, {"b": n_b, "y": n_y, "q": n_q, "z": n_z}, n_action, transition_func)
 print(f"VFI: {len(vfi_logs)} iterations, {vfi.total_time:.1f}s")
 
 # %% [markdown]
 # ## Watch the objective climb
-#
+# 
 # As in notebook 2, gradient ascent raises estimated expected lifetime utility
 # each step; now the estimate is averaged over simulated *price and TFP* paths,
 # not just idiosyncratic income.
@@ -297,7 +304,7 @@ plt.show()
 
 # %% [markdown]
 # ## The check: does the policy gradient match VFI as the price moves?
-#
+# 
 # The consumption policy is now a function of four variables, so we slice it: fix
 # the aggregate TFP state at its middle value and plot $c(b)$ across the three
 # **price** states, overlaying the policy gradient (dashed) on the VFI reference
@@ -349,7 +356,7 @@ plt.show()
 
 # %% [markdown]
 # ## What the moving price does to behavior
-#
+# 
 # Now that we trust the solution, read the economics off it. The two new moving pieces act
 # through two classic channels. We plot the (VFI) policy at a fixed income state,
 # sweeping one aggregate at a time.
@@ -392,7 +399,7 @@ plt.show()
 
 # %% [markdown]
 # ## Back to notebook 0: the price of anticipation
-#
+# 
 # One more comparison ties the thread back to the start. At the *central*
 # aggregate state ($q = 0.995$, $z \approx 1$) the household faces almost exactly
 # the fixed-price economy of notebooks 0–2. So the central-panel policy should
@@ -423,7 +430,7 @@ plt.show()
 
 # %% [markdown]
 # ## What's next
-#
+# 
 # The household now conditions on a *moving* price, but we handed it that price
 # from outside. **Notebook 4** removes the training wheels: the bond price becomes
 # **endogenous**, set each period by the condition that the bond market clears.
@@ -437,7 +444,7 @@ plt.show()
 
 # %% [markdown]
 # ## Exercises
-#
+# 
 # 1. **More persistent prices.** Make the bond-price chain stickier (raise the
 #    diagonal of `q_trans` toward 1). A household that expects today's price to
 #    last reacts to it more strongly, so the consumption policy should *fan out*
@@ -464,7 +471,7 @@ def AUS_sticky(policy, mt, st, key):
     return A, U, (q_next, z_next)
 
 
-spg_sticky, _ = SPGSolver(sample_size=128, epoch=150, warm_up=0, trunc_eps=0.02,
+spg_sticky, _ = SPGSolver(sample_size=128, epoch=150, warm_up=0, trunc_eps=0.01,
                           early_stop=False, seed=0, verbose=False
                           ).solve(gamma, state_space, action_space, AUS_sticky, reset_func)
 c_sticky = np.asarray(jnp.clip(wealth4d * spg_sticky["cshare"], eps, wealth4d - eps))
@@ -481,3 +488,5 @@ a1.set_ylabel(f"consumption $c$   ($y={float(e_grid[y_mid]):.2f}$)")
 a1.legend(fontsize=8)
 plt.tight_layout()
 plt.show()
+
+

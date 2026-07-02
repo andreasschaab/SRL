@@ -11,19 +11,37 @@
 # ---
 
 # %% [markdown]
+# **Running locally or on your own server ?** Manually install `srl` and `jax` package to your virtual environment using the following command. 
+# 
+# **Note that if this is not the first time** you install jax to your Python environment, then there might be some mismatch troubles. You can solve the problem by re-installing the correct version of jax.
+
+# %%
+# Install srl package to your local environment
+# Here we assume you are in the .../SRL/tutorials/, and install the package in editable mode.
+# # ! pip install -q -e ..
+
+# Note that if you have never installed jax before, you now have already finished the installation.
+# If you have installed jax before, the above command may change your previous jax version and cause mismatch troubles.
+# So we recommend you to re-install jax with the correct CUDA version if you are using GPU.
+# If you are using CUDA 12, run the following command:
+# # ! pip install jax[cuda12]
+# If you are using CUDA 13, run the following command:
+# # ! pip install jax[cuda13]
+
+# %% [markdown]
 # # 1. The same problem, in JAX
-#
+# 
 # In notebook 0 we solved the income-fluctuation problem by value function
 # iteration in plain NumPy, and saved the answer. This notebook solves the same
 # model with the same method, VFI, but re-expressed in JAX. Nothing about the
 # economics changes. The only new thing is the *tooling*.
-#
+# 
 # Why bother? Because the rest of the course runs on JAX: the policy gradient
 # (notebook 2) needs automatic differentiation, and the general-equilibrium
 # solver (notebooks 4–5) needs `jit` and `vmap` to be fast. Before we trust JAX
 # on a problem we *can't* check by hand, we introduce it on one we already
 # solved, and confirm it lands on the same consumption policy.
-#
+# 
 # We change one axis only: NumPy → JAX. The model is held fixed. By the end you
 # will have (i) a JAX mental model, (ii) the household VFI written with
 # `vmap`/`jit`, (iii) a first look at `grad`, the object notebook 2 is built on,
@@ -31,36 +49,36 @@
 
 # %% [markdown]
 # ## What you should already know
-#
+# 
 # - **Notebook 0.** We reproduce its consumption policy, so it is the reference.
 # - The consumption–savings problem and value function iteration (from nb 0).
-#
+# 
 # No JAX is assumed. This notebook *is* the JAX introduction. If you have never
 # written a line of JAX, you are in the right place.
 
 # %% [markdown]
 # ## What JAX *is*: one idea, not three tools
-#
+# 
 # It is tempting to learn JAX as a list of features: "there's `grad`, there's
 # `jit`, there's `vmap`." That list is exactly what makes JAX feel arbitrary.
 # Here is the single idea underneath all of it:
-#
+# 
 # > **JAX is NumPy, plus the ability to transform functions. A *transformation*
 # > takes a function and returns a new function.**
-#
+# 
 # You already know one transformation: **differentiation**. If $f(x)=x^2$, its
 # derivative is not a number, it is *another function*, $x\mapsto 2x$, that you
 # can evaluate anywhere. JAX's `grad` is literally that operator, as code:
 # `grad(f)` hands you back a new function. The other two transforms are the same
 # *shape* of thing:
-#
+# 
 # - **`grad`**: a function $\mapsto$ the function that computes its derivative,
 #   the $\partial$ operator you already use.
 # - **`vmap`**: a function written for *one* input $\mapsto$ one that runs over a
 #   whole *batch*, the loop over your state grid, written for you.
 # - **`jit`**: a function $\mapsto$ the same function, compiled to one fast, fused
 #   machine-code kernel.
-#
+# 
 # All three have the same type, **function in, function out**, and that is the
 # whole point: **they compose.** `jit(vmap(grad(f)))` is a compiled, batched
 # gradient. A table of three separate tools hides this; the composition *is* JAX.
@@ -96,14 +114,14 @@ print("f' over a batch:", jax.vmap(df)(jnp.array([1.0, 2.0, 3.0])))  # vmap(grad
 
 # %% [markdown]
 # ## The one mechanism behind all of it: *tracing*
-#
+# 
 # How can `grad`/`jit`/`vmap` rewrite a function they know nothing about? They
 # **trace** it. When you transform a function, JAX runs it *once* with fake
 # placeholder inputs ("tracers") that **record each operation instead of
 # computing numbers**. That recording is what gets differentiated, vectorized, or
 # compiled. Your Python body is a *recipe-builder*, run once on stand-ins; it is
 # not the computation itself.
-#
+# 
 # This one fact, seen once, explains every surprising thing about JAX. Watch:
 
 # %%
@@ -119,18 +137,18 @@ _ = g(4.0)          # the body does NOT run: JAX reuses the compiled recipe
 
 # %% [markdown]
 # Two things just happened, and they are the Rosetta Stone for JAX:
-#
+# 
 # 1. `x` printed as a **tracer** (here `JitTracer(~float64[])`), not `3.0`. At trace time there
 #    are no values yet, `x` stands in for "some float," so your code runs at the
 #    level of shapes and dtypes, not numbers.
 # 2. The second call printed **nothing**. The Python body ran *once* to build the
 #    recipe; after that, calls execute the compiled recipe and never re-enter
 #    your Python.
-#
+# 
 # Hold those two phases apart, *Python builds a recipe (once, on tracers)* vs.
 # *the recipe computes numbers (many times, compiled)*, and JAX's "rules" stop
 # being arbitrary. They are all **consequences of tracing**:
-#
+# 
 # - **Arrays are immutable**: `y = x.at[i].set(v)` returns a *new* array rather
 #   than writing in place, because an in-place mutation is a side effect the
 #   recipe cannot faithfully record.
@@ -164,14 +182,14 @@ print(jax.make_jaxpr(recipe)(jnp.arange(4.0)))
 
 # %% [markdown]
 # ## The model, recalled from notebook 0
-#
+# 
 # A household maximizes $\mathbb{E}_0\sum_t \beta^t u(c_t)$ with
 # $u(c)=c^{1-\sigma}/(1-\sigma)$, subject to $c + q\,b' = b + y$ and $b'\ge 0$,
 # taking the fixed bond price $q$ as given. The Bellman equation is
 # $$V(b,y) = \max_{s\in[0,1]}\ u\!\big(s\,(b+y)\big)
 #            + \beta \sum_{y'} \Pi(y'\mid y)\, V(b', y'),
 #   \qquad b' = (b+y-s(b+y))/q.$$
-#
+# 
 # Rather than rebuild the calibration, we load notebook 0's saved grids and
 # parameters (same income process, same asset grid, same prices) so the two
 # solutions are comparable by construction. (Notebook 0 wrote this file.)
@@ -198,13 +216,13 @@ print("income states:", np.asarray(e_grid).round(3))
 
 # %% [markdown]
 # ## Value function iteration, in JAX
-#
+# 
 # Here is the one new idea, applied. We write the Bellman update as a **pure
 # function of a single state** `(b, y)`, then use `vmap` to apply it across the
 # entire grid (no nested Python loops over `b` and `y`) and `jit` to compile the
 # result. This is the JAX idiom: *write the scalar case, then vectorize and
 # compile it.*
-#
+# 
 # The continuation value $V(b', y')$ is needed at an off-grid point $b'$, so we
 # interpolate it linearly on the asset grid with `jnp.interp`, exactly the scheme
 # notebook 0 used (`np.interp`), which is why the answers will match.
@@ -269,7 +287,7 @@ V_jax, c_policy_jax = solve_vfi_jax()
 
 # %% [markdown]
 # ### Does it match notebook 0?
-#
+# 
 # Same model, same method, different engine, so the consumption policies must
 # agree. We overlay the JAX policy (dashed) on the NumPy baseline (solid), and
 # report the largest discrepancy.
@@ -285,8 +303,8 @@ for j in range(n_y):
                     label=f"nb 0 (NumPy): $y={float(e_grid[j]):.2f}$")
     ax.plot(b_grid[mask], c_policy_jax[mask, j], lw=2, ls="--", color=line.get_color(),
             label=f"JAX: $y={float(e_grid[j]):.2f}$")
-ax.set_xlabel("wealth $b$")
-ax.set_ylabel("consumption $c$")
+ax.set_xlabel("Wealth $b$")
+ax.set_ylabel("Consumption $c$")
 ax.set_title(f"JAX VFI vs. NumPy baseline (max abs diff {max_abs:.1e})")
 ax.legend(fontsize=8)
 ax.grid(alpha=0.3)
@@ -298,7 +316,7 @@ plt.show()
 
 # %% [markdown]
 # ## A first look at `grad`, pointed at this model
-#
+# 
 # We met `grad` in the intro; here we aim it at the object that matters
 # economically, the utility function, and *verify* it, so we trust autodiff
 # before it carries the method in notebook 2. `jax.grad(u)` returns the exact
@@ -320,7 +338,7 @@ print(f"finite difference  = {fd:.8f}")
 
 # %% [markdown]
 # ## The same solver, packaged: `srl.VFISolver`
-#
+# 
 # What we wrote by hand above (iterate the Bellman operator, vmapped over the
 # state grid) is exactly what `srl`'s `VFISolver` does. The library factors out
 # the loop and the vectorization; you supply a `transition_func` describing the
@@ -378,8 +396,8 @@ for j in range(n_y):
                     label=f"nb 0 (NumPy): $y={float(e_grid[j]):.2f}$")
     ax.plot(b_grid[mask], c_policy_lib[mask, j], lw=2, ls="--", color=line.get_color(),
             label=f"VFISolver: $y={float(e_grid[j]):.2f}$")
-ax.set_xlabel("wealth $b$")
-ax.set_ylabel("consumption $c$")
+ax.set_xlabel("Wealth $b$")
+ax.set_ylabel("Consumption $c$")
 ax.set_title(f"srl.VFISolver vs. NumPy baseline (max abs diff {max_abs_lib:.1e})")
 ax.legend(fontsize=8)
 ax.grid(alpha=0.3)
@@ -388,18 +406,18 @@ plt.show()
 
 # %% [markdown]
 # ## What we did, and what's next
-#
+# 
 # We re-solved notebook 0's household problem in JAX, by hand (`vmap` + `jit`)
 # and via `srl.VFISolver`, and both reproduce the NumPy consumption policy. The
 # economics never moved; we only changed the engine, and previewed `grad`.
-#
+# 
 # **Notebook 2** changes the *method* instead of the tooling: it throws away the
 # Bellman operator and maximizes lifetime utility directly by gradient ascent on
 # the policy (the policy gradient), checked once more against this same answer.
 
 # %% [markdown]
 # ## Exercises
-#
+# 
 # 1. **Autodiff vs. finite differences.** For the marginal utility check above,
 #    shrink the finite-difference step $h$ from $10^{-2}$ down to $10^{-8}$ and
 #    plot the error against `jax.grad`. Finite differences improve, then *worsen*
@@ -422,3 +440,5 @@ ax.set_title("Exercise 1: finite differences degrade; autodiff is exact")
 ax.grid(alpha=0.3, which="both")
 plt.tight_layout()
 plt.show()
+
+
