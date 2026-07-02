@@ -6,6 +6,7 @@ build/
 dist/
 .venv/
 venv/
+.vscode/
 
 # Jupyter — the generated NN_*.ipynb ARE committed; only ignore checkpoints
 .ipynb_checkpoints/
